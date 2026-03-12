@@ -61,14 +61,28 @@ export const createInvoice = async (prevState: State, formData: FormData) => {
   redirect("/dashboard/invoices");
 };
 
-export const updateInvoice = async (id: string, formData: FormData) => {
-  const validatedData = UpdateInvoiceSchema.parse(Object.fromEntries(formData));
-  const amountInCents = validatedData.amount * 100;
+export const updateInvoice = async (
+  id: string,
+  prevState: State,
+  formData: FormData,
+) => {
+  const validatedFields = UpdateInvoiceSchema.safeParse(
+    Object.fromEntries(formData),
+  );
+
+  if (!validatedFields.success) {
+    return {
+      errors: validatedFields.error.flatten().fieldErrors,
+      message: "Missing fields. Failed to update invoice",
+    };
+  }
+  const { customerId, amount, status } = validatedFields.data;
+  const amountInCents = amount * 100;
   try {
-    await sql`UPDATE invoices SET customer_id=${validatedData.customerId}, amount=${amountInCents}, status=${validatedData.status} WHERE id=${id}`;
+    await sql`UPDATE invoices SET customer_id=${customerId}, amount=${amountInCents}, status=${status} WHERE id=${id}`;
   } catch (err) {
     console.log(String(err));
-    // return { message: "Database Error: Failed to update invoice" };
+    return { message: "Database Error: Failed to update invoice" };
   }
 
   revalidatePath("/dashboard/invoices");
