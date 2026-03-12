@@ -7,9 +7,15 @@ import { redirect } from "next/navigation";
 
 const FormSchema = z.object({
   id: z.string(),
-  customerId: z.string(),
-  amount: z.coerce.number(),
-  status: z.enum(["pending", "paid"]),
+  customerId: z.string({
+    invalid_type_error: "Please select a customer.",
+  }),
+  amount: z.coerce
+    .number()
+    .gt(0, { message: "Please enter an amount greater amount than 0." }),
+  status: z.enum(["pending", "paid"], {
+    invalid_type_error: "Please select an invoice status.",
+  }),
   date: z.string(),
 });
 
@@ -18,17 +24,37 @@ const UpdateInvoiceSchema = FormSchema.omit({ id: true, date: true });
 
 const sql = postgres(process.env.POSTGRES_URL!, { ssl: "require" });
 
-export const createInvoice = async (formData: FormData) => {
-  const validatedData = CreateInvoiceSchema.parse(Object.fromEntries(formData));
-  const amountInCents = validatedData.amount * 100;
+export type State = {
+  errors?: {
+    customerId?: string[];
+    amount?: string[];
+    status?: string[];
+  };
+  message?: string | null;
+};
+
+export const createInvoice = async (prevState: State, formData: FormData) => {
+  const validatedFields = CreateInvoiceSchema.safeParse(
+    Object.fromEntries(formData),
+  );
+
+  if (!validatedFields.success) {
+    return {
+      errors: validatedFields.error.flatten().fieldErrors,
+      message: "Missing field. Failed to create invoice",
+    };
+  }
+
+  const { customerId, amount, status } = validatedFields.data;
+
+  const amountInCents = amount * 100;
   const date = new Date().toISOString().split("T")[0];
   try {
     await sql`INSERT INTO invoices (customer_id, amount, status, date)
-  VALUES (${validatedData.customerId}, ${amountInCents}, ${validatedData.status}, ${date})
+  VALUES (${customerId}, ${amountInCents}, ${status}, ${date})
   `;
   } catch (err) {
-    console.log(String(err));
-    // return { message: "Database Error: Failed to create invoice" };
+    return { message: "Database Error: Failed to create invoice" };
   }
 
   revalidatePath("/dashboard/invoices");
